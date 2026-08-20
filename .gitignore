@@ -1,0 +1,7 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+data/soc-pokec-relationships.txt.gz
+data/soc-pokec-profiles.txt.gz
+results.json

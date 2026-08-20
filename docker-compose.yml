@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  arangodb:
+    image: arangodb:3.11.10
+    container_name: arangodb_bench
+    ports:
+      - "8529:8529"
+    environment:
+      - ARANGO_ROOT_PASSWORD=rootpassword
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+    restart: unless-stopped
+
+  falkordb:
+    image: falkordb/falkordb:latest
+    container_name: falkordb_bench
+    ports:
+      - "6379:6379"
+    command: ["--maxmemory", "192mb", "--maxmemory-policy", "noeviction"]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+    restart: unless-stopped
+
+  memgraph:
+    image: memgraph/memgraph:latest
+    container_name: memgraph_bench
+    ports:
+      - "7687:7687"
+    command: ["--memory-limit=192"]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+    restart: unless-stopped
+
+  neo4j:
+    image: neo4j:5.22.0-community
+    container_name: neo4j_bench
+    ports:
+      - "7474:7474" # HTTP
+      - "7473:7687" # Bolt (mapped to 7473 to avoid conflict with Memgraph)
+    environment:
+      - NEO4J_AUTH=neo4j/neo4jpassword
+      - NEO4J_server_memory_heap_initial__size=128m
+      - NEO4J_server_memory_heap_max__size=128m
+      - NEO4J_server_memory_pagecache_size=64m
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+    restart: unless-stopped

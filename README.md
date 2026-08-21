@@ -1,168 +1,295 @@
-# Graph Database Benchmarking Suite: CognoDB Cloud vs. Local Databases
+# Graph Database Cloud Benchmarking Suite: CognoDB Cloud vs. Managed Graph Platforms
 
-This repository contains a scientifically rigorous, reproducible benchmark suite designed to compare the performance characteristics of **CognoDB Cloud** against four managed/self-hosted graph database engines: **ArangoDB**, **FalkorDB**, **Memgraph**, and **Neo4j Community**.
+A reproducible, automated benchmark suite comparing **CognoDB Cloud** against four other graph database platforms on the same dataset and equivalent workloads.
 
-The benchmarks are executed against a sampled, highly connected subgraph of the public **SNAP soc-Pokec** social network dataset.
-
----
-
-## 1. Environment & Resource Specifications
-
-To establish a defensible baseline of comparison, controlled resource parity was applied across the self-hosted platforms where possible. However, because CognoDB Cloud is evaluated as a managed service, key physical host characteristics (vCPU, memory, storage pooling, multi-tenant scheduling) are opaque.
-
-### Client Hardware & OS Specs
-* **Host Platform:** macOS (Darwin 25.5.0)
-* **Architecture:** ARM64 (Apple Silicon)
-* **Python Runtime:** Python v3.9.6
-* **Client Driver Versions:**
-  * `neo4j` Python Driver: `v5.23.0`
-  * `python-arango` Driver: `v7.9.0`
-  * `falkordb` Driver: `v1.0.4`
-
-### Database Engine Deployments & Resource Constraints
-1. **CognoDB Cloud:** Managed Cloud Instance (Bolt-compatible API). Physical host hardware configurations are unobservable; execution results include network round-trip effects (WAN latency).
-2. **ArangoDB (v3.11.10):** Runs locally in Docker. Capped at `0.5 vCPU` and `256 MB RAM` via Docker resource limits.
-3. **FalkorDB (v4.20.3):** Runs locally in Docker. Capped at `0.5 vCPU` and `256 MB RAM` (engine configured with `--maxmemory 192mb` to prevent memory eviction crashes).
-4. **Memgraph (v3.12.0):** Runs locally in Docker. Capped at `0.5 vCPU` and `256 MB RAM` (configured with `--memory-limit=192` to avoid out-of-memory container terminates).
-5. **Neo4j Community (v5.22.0):** Runs locally in Docker. Capped at `0.5 vCPU` and `256 MB RAM` (configured with `server.memory.heap.initial_size=96m`, `server.memory.heap.max_size=128m`, and `server.memory.pagecache.size=32m`).
+> **Dataset:** SNAP soc-Pokec social network (15,000 nodes, 104,602 relationships)
+> **Platforms:** CognoDB Cloud · Neo4j Aura · ArangoDB (ArangoGraph) · Memgraph Cloud · FalkorDB (local Docker)
 
 ---
 
-## 2. Dataset Preprocessing & Utility
+## 1. Platform Specifications & Resource Parity
 
-### Relevance & Project Utility
-The **Stanford SNAP soc-Pokec** dataset is a real-world directed graph representing a Slovakian social network. It is highly suited for benchmarking graph engines because it combines high topological density (multi-hop traversal paths) with rich user profile attributes (age, gender, region). This allows execution of:
-* **Topology traversals:** Evaluates pointer representation, index lookups, and graph representation in memory.
-* **Property filtering:** Measures document/relational filtering capabilities on nodes.
+### Fairness Methodology
+All cloud databases were benchmarked on their **free or entry-level tiers** to maintain resource parity. CognoDB Cloud's free tier is the resource baseline (burstable 0.5 vCPU, 256 MB RAM, 1 GB disk). Each competitor uses the closest available free/trial tier. FalkorDB is the sole exception — it runs on a local Docker container capped to equivalent resources — because no managed FalkorDB Cloud service with the graph module is available on a free tier (see [Caveats §8.1](#81-falkordb-runs-locally-not-in-the-cloud)).
 
-### Sampling Rationale & Durability Limits
-* **Full Dataset Size:** Contains **1,632,803 profiles** (nodes) and **30,622,419 relationships** (directed edges).
-* **RAM Constraints:** Attempting to ingest the full graph into databases limited to **256 MB RAM** results in transaction log saturation, heap exhaustion, or JVM crashes.
-* **Sampling Algorithm:** [`preprocess.py`](file:///Users/sanjayvarma/Documents/Projects/Task_wexaai/preprocess.py) performs a deterministic Breadth-First Search (BFS) starting from the global highest out-degree node (ID: `5867`, out-degree: `8,763`). Adjacency lists are sorted prior to traversal to guarantee deterministic output. Traversal halts exactly at **15,000 nodes**, extracting all friendships (induced subgraph) within this set.
-* **Final Preprocessed Size:**
-  * **Nodes (User Profiles):** 15,000
-  * **Relationships (FRIEND Edges):** 104,602
-  * **Missing Profiles:** 0 (All sampled nodes contain corresponding profiles)
-  * **Average Out-Degree:** 6.97 edges/node
+### Instance Specifications
+
+| Platform | Deployment | Tier | vCPU | RAM | Storage | Region |
+|---|---|---|---|---|---|---|
+| **CognoDB Cloud** | Managed SaaS | Free (c0) | 0.5 (burstable) | 256 MB | 1 GB | Auto-provisioned |
+| **Neo4j Aura** | Managed SaaS | Free | Shared (not disclosed) | Shared (not disclosed) | 200k nodes / 400k rels limit | Auto-provisioned |
+| **ArangoDB (ArangoGraph)** | Managed SaaS | Free Trial | Shared (not disclosed) | Shared (not disclosed) | Not disclosed | AWS eu-central-1 |
+| **Memgraph Cloud** | Managed SaaS | Free Trial | Shared (not disclosed) | 2 GB | In-memory | Auto-provisioned |
+| **FalkorDB** | Local Docker | Self-hosted | 0.5 (capped) | 256 MB (capped) | Local disk | localhost |
+
+### Client Environment
+* **Host:** macOS Darwin 25.5.0, ARM64 (Apple Silicon)
+* **Python:** 3.9.6
+* **Driver Versions:** `neo4j==5.23.0`, `python-arango==7.9.0`, `falkordb==1.0.4`, `python-dotenv==1.0.1`
 
 ---
 
-## 3. Indexing Configurations
+## 2. Dataset
 
-| Database | User ID Index | Filtered Fields Index (age, gender) | Indexing Mechanism |
-| --- | --- | --- | --- |
-| **CognoDB Cloud** | Unique constraint on `User.id` | None | Managed B-Tree / Implicit Unique Index |
+### Source
+The **[Stanford SNAP soc-Pokec](https://snap.stanford.edu/data/soc-Pokec.html)** dataset — a directed social network from a Slovakian social platform with 1.6M profiles and 30.6M relationships.
+
+### Sampling
+The full dataset exceeds the 256 MB RAM ceiling of free-tier instances. [`preprocess.py`](preprocess.py) performs a **deterministic Breadth-First Search** starting from the highest out-degree node (ID: 5867, out-degree: 8,763). Adjacency lists are sorted to guarantee reproducibility. Traversal halts at exactly **15,000 nodes**, extracting all induced-subgraph edges.
+
+| Metric | Value |
+|---|---|
+| Nodes (User Profiles) | 15,000 |
+| Relationships (FRIEND edges) | 104,602 |
+| Missing Profiles | 0 |
+| Average Out-Degree | 6.97 edges/node |
+
+### Load Method
+* **Cypher engines** (CognoDB, Neo4j, Memgraph, FalkorDB): Batched `UNWIND` queries (batch size = 1,000) via official Neo4j/FalkorDB Python drivers.
+* **ArangoDB**: Python-arango `insert_many()` bulk API targeting `User` (document) and `Friend` (edge) collections.
+
+---
+
+## 3. Indexing Configuration
+
+| Database | User ID Index | Filtered Fields (age, gender) | Indexing Mechanism |
+|---|---|---|---|
+| **CognoDB Cloud** | Unique constraint on `User.id` | None | Managed B-Tree |
+| **Neo4j Aura** | Unique constraint on `User.id` | None | Native Range Index (B-Tree) |
 | **ArangoDB** | Unique hash index on `User.id` | None | RocksDB Hash Index |
-| **FalkorDB** | Range index on `User.id` | None | GraphBLAS Sparse Matrix Index |
-| **Memgraph** | Unique constraint on `User.id` | None | In-Memory Label-Property SkipList |
-| **Neo4j Community**| Unique constraint on `User.id` | None | Native Cypher Range Index (B-Tree) |
+| **Memgraph Cloud** | Unique constraint on `User.id` | None | In-Memory SkipList |
+| **FalkorDB** | Range index on `User.id` | None | GraphBLAS Sparse Matrix |
 
-> [!NOTE]
-> **Attribute Filters:** Indexes are intentionally omitted on `age` and `gender` attributes. The filtered lookup workload is designed to force a full collection scan, measuring the engine's property lookup and scanning efficiency under limited RAM.
+> **Note:** Indexes on `age` and `gender` are intentionally omitted. The filtered lookup workload is designed to force a full collection scan, measuring each engine's raw property-scan efficiency.
 
 ---
 
 ## 4. Results Matrix
 
-The matrix below summarizes the performance metrics from the final execution run.
+All results from the final production run. Latencies are in milliseconds. Throughput is in queries per second (QPS).
 
-* *All single-query latencies are reported in milliseconds (ms) as p50 percentiles.*
-* *Throughput is reported in Queries Per Second (QPS) at thread concurrency levels C=1, C=10, and C=40.*
-* *Mixed workload error rates are reported at C=40.*
+### 4.1 Ingestion Performance
 
-| Database | Ingest Nodes/s | Ingest Edges/s | Total Ingest (s) | 1-Hop p50 (ms) | 2-Hop p50 (ms) | 3-Hop p50 (ms) | Point p50 (ms) | Filter p50 (ms) | Agg p50 (ms) | Concurrency QPS (C=1 / 10 / 40) | Error Rate (C=40) |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| **CognoDB Cloud** | 698.9 | 4873.7 | 21.46 | 89.87 | 120.35 | 750.37 | 120.06 | 93.94 | 125.89 | 6.6 / 14.5 / 15.7 | 1.4% |
-| **ArangoDB** | 6295.6 | 43902.4 | 2.38 | 3.11 | 17.29 | 224.16 | 1.95 | 5.26 | 6.28 | 43.4 / 18.6 / 21.8 | 2.2% |
-| **Memgraph** | 8477.1 | 59114.7 | 1.77 | 0.88 | 2.27 | 14.05 | 0.53 | 4.56 | 4.49 | 287.1 / 170.7 / 212.5 | 1.5% |
-| **Neo4j** | 508.9 | 3548.6 | 29.48 | 3.42 | 4.70 | 73.54 | 4.23 | 8.09 | 9.15 | 66.3 / 73.3 / 18.9 | 10.5% |
-| **FalkorDB** | 1432.9 | 9992.5 | 10.47 | 0.46 | 2.64 | 4.48 | 0.53 | 1.79 | 4.50 | 340.8 / 169.9 / 174.4 | 5.6% |
+| Database | Total Time (s) | Nodes/sec | Edges/sec |
+|---|---|---|---|
+| **FalkorDB** ⚡ | **10.91** | 1,375 | 9,586 |
+| **Neo4j Aura** | 15.45 | 971 | 6,770 |
+| **CognoDB Cloud** | 19.78 | 758 | 5,288 |
+| **Memgraph Cloud** | 28.34 | 529 | 3,692 |
+| **ArangoDB** | 31.34 | 479 | 3,338 |
 
-### Key Observations & Methodological Realities
-1. **Local-vs-Cloud Latency Profiles:** CognoDB Cloud displays a base single-query latency of ~85-120ms, which is dominated by network round-trip time (RTT). The four self-hosted local databases run within isolated Docker containers on `localhost` and display low single-digit millisecond response times. This comparison represents controlled resource parity for self-hosted instances under a 256MB RAM ceiling, but does not isolate SaaS virtualization overhead on CognoDB.
-2. **Sustained Concurrent Throughput:** Running concurrent workers with thread-isolated connection adapters shows that local engines scale significantly under read-heavy workloads (Memgraph reaching 212.5 QPS, FalkorDB reaching 174.4 QPS). CognoDB Cloud concurrent throughput is bounded near 15.7 QPS, indicating network socket and SaaS service-layer serialization bounds.
-3. **Traversal Performance Trends:** FalkorDB displays highly stable traversal latencies as path depth increases from 1-hop to 3-hops (0.46ms to 4.48ms). This observed trend is consistent with a GraphBLAS matrix representation which executes hops as sparse matrix-matrix multiplications, although deep profiling would be needed to isolate the exact speed contribution of the engine vs local index lookups. Memgraph displays highly efficient in-memory traversal and fast ingestion.
+### 4.2 Read Workload Latency (ms)
 
+| Database | Point p50 | Point p95 | Filter p50 | Filter p95 | Agg p50 | Agg p95 |
+|---|---|---|---|---|---|---|
+| **FalkorDB** ⚡ | **0.50** | 0.85 | **1.45** | 2.46 | **2.75** | 4.31 |
+| **ArangoDB** | 45.12 | 120.64 | 58.14 | 110.83 | 54.69 | 106.56 |
+| **CognoDB Cloud** | 115.48 | 131.51 | 98.71 | 108.52 | 130.01 | 146.41 |
+| **Neo4j Aura** | 105.96 | 128.05 | 105.55 | 117.99 | 108.56 | 121.47 |
+| **Memgraph Cloud** | 173.10 | 181.30 | 176.07 | 183.20 | 478.21 | 564.95 |
 
-### Performance Visualization Charts
-The orchestrator automatically outputs visualization plots under the `charts/` directory:
-* **Hop Traversal Latency Comparison:** [`charts/latency_comparison.png`](file:///Users/sanjayvarma/Documents/Projects/Task_wexaai/charts/latency_comparison.png) (log-scale plot of hop performance)
-* **Concurrency Scaling Plot:** [`charts/throughput_comparison.png`](file:///Users/sanjayvarma/Documents/Projects/Task_wexaai/charts/throughput_comparison.png) (line chart showing throughput scaling from C=1 to C=40)
+### 4.3 Graph Traversal Latency (ms)
+
+| Database | 1-Hop p50 | 1-Hop p95 | 2-Hop p50 | 2-Hop p95 | 3-Hop p50 | 3-Hop p95 |
+|---|---|---|---|---|---|---|
+| **FalkorDB** ⚡ | **0.49** | 0.70 | **2.59** | 5.52 | **4.22** | 41.02 |
+| **ArangoDB** | 45.71 | 102.36 | 305.68 | 1,415.65 | 4,949.13 | 16,262.71 |
+| **CognoDB Cloud** | 87.65 | 95.53 | 115.74 | 218.07 | 766.34 | 2,409.80 |
+| **Neo4j Aura** | 103.13 | 116.15 | 103.44 | 120.73 | 117.02 | 150.22 |
+| **Memgraph Cloud** | 182.10 | 602.01 | 528.44 | 600.54 | 459.31 | 605.81 |
+
+### 4.4 Concurrent Mixed Workload (90% Read / 10% Write)
+
+| Database | C=1 QPS | C=10 QPS | C=40 QPS | Error Rate (C=40) |
+|---|---|---|---|---|
+| **FalkorDB** ⚡ | **321.1** | 131.3 | 116.3 | 2.5% |
+| **Neo4j Aura** | 8.3 | 79.5 | **284.4** | 2.2% |
+| **Memgraph Cloud** | 2.2 | 50.5 | 189.5 | 1.9% |
+| **CognoDB Cloud** | 6.8 | 14.7 | 16.1 | **1.4%** |
+| **ArangoDB** | 1.9 | 2.2 | 2.5 | 4.2% |
+
+### 4.5 Resource Footprint
+
+| Database | Stored Data Size | Memory Usage | Observable? |
+|---|---|---|---|
+| **CognoDB Cloud** | Not observable | Not observable | ❌ — Managed SaaS, no metrics console exposed on free tier |
+| **Neo4j Aura** | Not observable | Not observable | ❌ — Free tier does not expose instance metrics |
+| **ArangoDB** | Not observable | Not observable | ❌ — ArangoGraph trial does not expose detailed resource metrics |
+| **Memgraph Cloud** | Not observable | Not observable | ❌ — Cloud console does not expose per-query memory stats on trial |
+| **FalkorDB** | ~4.2 MB (Redis `DBSIZE`) | 192 MB max (Docker cap) | ✅ — Local Docker, observable via `docker stats` |
+
+### Performance Visualization
+
+<p align="center">
+  <img src="charts/latency_comparison.png" alt="Hop Traversal Latency Comparison (log-scale)" width="700">
+</p>
+
+<p align="center">
+  <img src="charts/throughput_comparison.png" alt="Concurrent Throughput Scaling" width="500">
+</p>
 
 ---
 
-## 5. Workload Cypher & AQL Definitions
+## 5. Workload Definitions (Query Equivalence)
 
-To verify query equivalence, logically identical workloads are executed across all engines:
+Logically identical queries were executed across all engines:
 
-1. **Ingest Phase:** Batched unwinding of node lists and edge lists (batches of 1,000).
-   * *Cypher (Neo4j, Memgraph, FalkorDB, CognoDB):*
-     `UNWIND $batch AS r CREATE (:User {id: r.id, public: r.public, gender: r.gender, region: r.region, age: r.age})`
-     `UNWIND $batch AS r MATCH (u:User) WHERE u.id = r.from_id MATCH (v:User) WHERE v.id = r.to_id CREATE (u)-[:FRIEND]->(v)`
-   * *ArangoDB AQL:* Uses `insert_many` payload insertion API targeting the `User` and `Friend` collections.
-2. **Point Lookups:** Retrieves attributes of a single node.
-   * *Cypher:* `MATCH (u:User {id: $id}) RETURN u.age, u.gender, u.region`
-   * *AQL:* `FOR u IN User FILTER u.id == @id RETURN [u.age, u.gender, u.region]`
-3. **Filtered Lookups:** Scans collection matching user attribute predicates.
-   * *Cypher:* `MATCH (u:User) WHERE u.age = $age AND u.gender = $gender RETURN count(u)`
-   * *AQL:* `RETURN LENGTH(FOR u IN User FILTER u.age == @age AND u.gender == @gender RETURN u)`
-4. **Traversal Hops (2-hop example):** Computes reachable unique neighbor set size.
-   * *Cypher:* `MATCH (u:User {id: $id})-[:FRIEND]->()-[:FRIEND]->(v) RETURN count(distinct v)`
-   * *AQL:* `RETURN LENGTH(FOR v IN 2..2 OUTBOUND CONCAT('User/', @id) Friend RETURN DISTINCT v._key)`
-5. **Aggregation:** Groups and counts profiles.
-   * *Cypher:* `MATCH (u:User) RETURN u.age, count(u)`
-   * *AQL:* `FOR u IN User COLLECT age = u.age WITH COUNT INTO count RETURN [age, count]`
+| Workload | Cypher (CognoDB, Neo4j, Memgraph, FalkorDB) | AQL (ArangoDB) |
+|---|---|---|
+| **Ingest Nodes** | `UNWIND $batch AS r CREATE (:User {id: r.id, ...})` | `insert_many(batch)` on `User` collection |
+| **Ingest Edges** | `UNWIND $batch AS r MATCH (u:User {id: r.from_id}) MATCH (v:User {id: r.to_id}) CREATE (u)-[:FRIEND]->(v)` | `insert_many(batch)` on `Friend` edge collection |
+| **Point Lookup** | `MATCH (u:User {id: $id}) RETURN u.age, u.gender, u.region` | `FOR u IN User FILTER u.id == @id RETURN [u.age, u.gender, u.region]` |
+| **Filtered Lookup** | `MATCH (u:User) WHERE u.age = $age AND u.gender = $gender RETURN count(u)` | `RETURN LENGTH(FOR u IN User FILTER u.age == @age AND u.gender == @gender RETURN u)` |
+| **N-Hop Traversal** | `MATCH (u:User {id: $id})-[:FRIEND*N]->(v) RETURN count(DISTINCT v)` | `WITH User RETURN LENGTH(FOR v IN N..N OUTBOUND CONCAT('User/', @id) Friend RETURN DISTINCT v._key)` |
+| **Aggregation** | `MATCH (u:User) RETURN u.age, count(u)` | `FOR u IN User COLLECT age = u.age WITH COUNT INTO count RETURN [age, count]` |
+| **Write (mixed)** | `CREATE (:User {id: $new_id, ...}) WITH ... MATCH (u:User {id: $existing_id}) CREATE (u)-[:FRIEND]->(v)` | AQL two-statement insert into `User` + `Friend` |
+
+### Cross-Database Semantic Validation
+Before measuring, the runner validates **query correctness** across all databases. For 5 validation nodes, it compares:
+- Point lookup attribute values (exact match)
+- 1-hop and 2-hop traversal counts (exact match)
+- Aggregation result dictionaries (exact match)
+
+If any database returns different results than the reference database, the benchmark aborts with a detailed mismatch error.
 
 ---
 
-## 6. Reproducibility Guide
+## 6. Analysis
 
-Follow these steps to run the complete benchmarking suite on your machine.
+### Why do the platforms differ?
 
-### Setup Prerequisites
-* Python 3.9+ installed and configured.
-* Docker Daemon and Docker Compose CLI tools installed and running.
-* A CognoDB Cloud instance provisioned.
+**1. FalkorDB dominates latency — but the comparison is unfair.**
+FalkorDB runs locally, eliminating ~100-200ms of network round-trip time that every cloud database incurs. Its sub-millisecond latencies reflect the engine's genuine efficiency (GraphBLAS sparse matrix representation enables O(1) adjacency lookups), but cannot be directly compared to cloud platforms. If FalkorDB were also cloud-hosted, we'd expect its absolute numbers to shift upward by the network RTT baseline.
 
-### Step 1: Clone and Prepare Environment
+**2. Neo4j Aura scales best under concurrency (284 QPS at C=40).**
+Neo4j's managed Aura infrastructure appears to handle concurrent connections exceptionally well, likely due to dedicated connection pooling and the maturity of the Bolt protocol's multiplexing. Its per-query latency is remarkably stable across all hop depths (103-117ms), suggesting consistent server-side execution regardless of traversal complexity. The ~100ms floor is almost entirely network RTT.
+
+**3. ArangoDB struggles with deep traversals (3-hop: 4.9 seconds).**
+ArangoDB uses a document-oriented storage engine (RocksDB) with graph traversals implemented as iterative document lookups rather than native pointer chasing. At 3-hop depth over HTTP/REST (not a binary protocol like Bolt), each expansion requires round-trips that compound multiplicatively. The 4.9s p50 for 3-hop vs. 45ms for 1-hop confirms this O(degree^depth) scaling behavior. ArangoDB's concurrency throughput is also the lowest (2.5 QPS at C=40), suggesting the HTTP API serializes requests more aggressively than Bolt-based engines.
+
+**4. Memgraph Cloud has unexpectedly high base latency.**
+Despite being an in-memory graph database that should excel at traversals, Memgraph Cloud shows 173-182ms base latency on simple point lookups. This suggests significant network overhead or connection establishment cost on the cloud trial tier. The relatively stable 459-528ms for 2-3 hop traversals (compared to the 182ms 1-hop) indicates that once connected, the actual graph computation is fast — the bottleneck is the connection layer. Under concurrency (C=40), Memgraph scales well to 189 QPS, confirming the engine itself is performant.
+
+**5. CognoDB Cloud shows balanced performance with the lowest error rate.**
+CognoDB's latency profile (87-130ms for most workloads) is consistent with a well-optimized Bolt-compatible cloud service. Its 3-hop traversal (766ms) is significantly faster than ArangoDB's (4,949ms) but slower than Neo4j Aura's (117ms). Under concurrency, CognoDB plateaus at ~16 QPS, suggesting conservative rate limiting or resource sharing on the free tier. Notably, it has the **lowest error rate** (1.4% at C=40), indicating reliable request handling even under contention.
+
+---
+
+## 7. Benchmark Methodology
+
+### Execution Protocol
+1. **Clear & Index:** Each database is fully cleared and re-indexed before each run.
+2. **Ingest:** Identical dataset loaded via batched operations.
+3. **Validate:** Cross-database semantic correctness verification.
+4. **Warm up:** 20 iterations per workload (results discarded).
+5. **Measure:** 100 iterations per workload. Latency recorded per-iteration.
+6. **Concurrency Sweep:** C=1, C=10, C=40 with 10-second mixed workload (90% reads, 10% writes) per level.
+7. **Report:** p50, p95, mean, min, max computed from raw latency arrays.
+
+### Statistical Methodology
+- **100 measured iterations** per read workload after 20-iteration warmup.
+- **Percentile-based reporting** (p50, p95) rather than averages, to resist outlier distortion.
+- **Deterministic query selection:** 100 test node IDs selected via `random.seed(42)` for exact reproducibility.
+- **Thread-isolated connections:** Each concurrency worker creates its own adapter instance to prevent connection contention artifacts.
+
+---
+
+## 8. Caveats & Limitations
+
+### 8.1 FalkorDB runs locally, not in the cloud
+FalkorDB is the only database running on a local Docker container. Redis Cloud (the managed platform) does not include the FalkorDB graph module (`GRAPH.QUERY`) on its free tier — it provides plain Redis only. No standalone FalkorDB Cloud free tier was available at the time of testing. This means **FalkorDB's sub-millisecond latencies exclude network round-trip time** and cannot be directly compared to the cloud platforms. Its results represent an engine-performance ceiling rather than a production-comparable data point.
+
+### 8.2 Network latency dominates cloud results
+All cloud databases exhibit a ~80-180ms latency floor on even the simplest queries (point lookups). This floor is primarily **network round-trip time** between the client (located in the US) and cloud instances (various regions). Differences in absolute latency between cloud platforms may reflect geographic proximity as much as engine performance.
+
+### 8.3 Free-tier throttling
+- **CognoDB Cloud** and **Neo4j Aura** free tiers may impose undisclosed rate limiting, which could explain the concurrency plateau observed at C=40.
+- **ArangoDB** showed the highest error rate (4.2% at C=40), suggesting connection limits or request throttling on the trial tier.
+- **Memgraph Cloud** trial tier (14-day) provides 2 GB RAM — significantly more than CognoDB's 256 MB — creating a potential resource asymmetry.
+
+### 8.4 Query language differences
+CognoDB, Neo4j, Memgraph, and FalkorDB all use **Cypher**, ensuring identical query syntax. ArangoDB uses **AQL** (ArangoDB Query Language), which requires semantically equivalent but syntactically different queries. While we verified correctness via cross-database validation, subtle execution plan differences between query languages may affect performance.
+
+### 8.5 Cloud resource opacity
+Most cloud platforms do not disclose exact vCPU, RAM, or storage allocated to free/trial tier instances. The "same resources" requirement is satisfied to the extent possible — all use the smallest available tier — but exact hardware parity cannot be guaranteed across managed platforms.
+
+### 8.6 Single-region client
+All benchmarks were run from a single client machine. Results may vary with different client-to-server network paths. No multi-region testing was performed.
+
+### 8.7 No cold-start separation
+Warmup iterations are executed but their latencies are discarded rather than reported separately. Cold-start performance is not captured in the results.
+
+---
+
+## 9. Reproducibility Guide
+
+### Prerequisites
+* Python 3.9+
+* Docker & Docker Compose (for FalkorDB local)
+* Free-tier accounts on CognoDB Cloud, Neo4j Aura, ArangoGraph, and Memgraph Cloud
+
+### Step 1: Clone & Install
 ```bash
-# Clone the repository
 git clone https://github.com/Sanjay-Varma-Hi/Wexa_AI.git
 cd Wexa_AI
-
-# Create virtual environment and install dependencies
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Step 2: Configure Environment Variables
-Copy `.env.template` to `.env` and fill in credentials.
-
-You can run the suite in one of two configurations:
-
-#### Option A: Local Docker Resource-Capped Setup (Default)
-Keep `RUN_LOCAL_DOCKER=true` and use default localhost URIs. The orchestrator automatically cleans and starts container databases.
-
-#### Option B: Remote Managed Cloud SaaS Setup (All Databases in Cloud)
-Set `RUN_LOCAL_DOCKER=false` and enter credentials for your cloud instances:
-* **CognoDB Cloud:** `COGNODB_URI`, `COGNODB_USER`, `COGNODB_PASSWORD`
-* **Neo4j Aura:** `NEO4J_URI` (neo4j+s://...), `NEO4J_USER`, `NEO4J_PASSWORD`
-* **ArangoGraph:** `ARANGODB_URI` (https://...), `ARANGODB_USER`, `ARANGODB_PASSWORD`
-* **Memgraph Cloud:** `MEMGRAPH_URI` (bolt+s://...), `MEMGRAPH_USER`, `MEMGRAPH_PASSWORD`
-* **FalkorDB/Redis Enterprise:** `FALKORDB_HOST`, `FALKORDB_PORT`, `FALKORDB_PASSWORD`
-
+### Step 2: Configure Environment
 ```bash
 cp .env.template .env
-nano .env
+nano .env  # Fill in your cloud credentials
 ```
 
-### Step 3: Run the Orchestrator
-Execute the unified orchestrator script:
+Set `RUN_LOCAL_DOCKER=false` for cloud mode. Required variables:
+- `COGNODB_URI`, `COGNODB_USER`, `COGNODB_PASSWORD`
+- `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`
+- `ARANGODB_URI`, `ARANGODB_USER`, `ARANGODB_PASSWORD`
+- `MEMGRAPH_URI`, `MEMGRAPH_USER`, `MEMGRAPH_PASSWORD`
+- `FALKORDB_HOST`, `FALKORDB_PORT`, `FALKORDB_PASSWORD`
+
+### Step 3: Start FalkorDB Locally
+```bash
+docker compose up -d falkordb
+```
+
+### Step 4: Run the Benchmark
 ```bash
 python3 run_benchmark.py
 ```
-* **If running locally:** It handles starting containers, verifying TCP port availability, preprocessing the graph dataset, running the benchmarks, and generating results.
-* **If running in the cloud:** It bypasses local container management, connects directly to your cloud endpoints, preprocesses/loads the dataset, performs cross-database semantic validation, and runs benchmarks.
 
-All summary results will print directly to the console, raw metrics will be recorded in `results/raw/`, aggregated rates in `results/summary.csv`, and visualization charts saved under `charts/`.
+This single command will:
+1. Validate credentials
+2. Download and preprocess the dataset (if not cached)
+3. Sequentially benchmark each configured database
+4. Cross-validate query correctness
+5. Generate `results/summary.csv` and charts under `charts/`
+
+---
+
+## 10. Repository Structure
+
+```
+├── README.md                  # This file
+├── run_benchmark.py           # Unified orchestrator (single entry point)
+├── preprocess.py              # SNAP Pokec dataset downloader & BFS sampler
+├── generate_report.py         # Results aggregation, CSV & chart generation
+├── benchmark/
+│   ├── runner.py              # Core benchmark engine (warmup, measure, validate)
+│   └── adapters/
+│       ├── cognodb.py         # CognoDB Cloud adapter (Bolt protocol)
+│       ├── neo4j.py           # Neo4j Aura adapter (Bolt protocol)
+│       ├── memgraph.py        # Memgraph Cloud adapter (Bolt protocol)
+│       ├── falkordb.py        # FalkorDB adapter (Redis protocol + Cypher)
+│       └── arangodb.py        # ArangoDB adapter (HTTP/REST + AQL)
+├── docker-compose.yml         # FalkorDB local container definition
+├── requirements.txt           # Pinned Python dependencies
+├── .env.template              # Environment variable template
+├── data/                      # Preprocessed CSV files (generated)
+├── results/
+│   ├── raw/                   # Per-database JSON result files
+│   └── summary.csv            # Aggregated results matrix
+└── charts/                    # Auto-generated visualization PNGs
+```

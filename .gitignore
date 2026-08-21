@@ -2,6 +2,7 @@
 .venv/
 __pycache__/
 *.pyc
+.DS_Store
 data/soc-pokec-relationships.txt.gz
 data/soc-pokec-profiles.txt.gz
 results.json

@@ -14,7 +14,7 @@ services:
           cpus: '0.5'
           memory: 256M
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8529/_api/version"]
+      test: ["CMD", "arangosh", "--server.endpoint", "tcp://127.0.0.1:8529", "--server.username", "root", "--server.password", "rootpassword", "--javascript.execute-string", "true"]
       interval: 3s
       timeout: 2s
       retries: 15
@@ -50,7 +50,7 @@ services:
           cpus: '0.5'
           memory: 256M
     healthcheck:
-      test: ["CMD", "python3", "-c", "import socket; s = socket.socket(); s.connect(('localhost', 7687))"]
+      test: ["CMD-SHELL", "echo 'RETURN 1;' | mgconsole"]
       interval: 3s
       timeout: 2s
       retries: 15
@@ -73,8 +73,8 @@ services:
           cpus: '0.5'
           memory: 256M
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7474"]
-      interval: 3s
-      timeout: 2s
+      test: ["CMD", "cypher-shell", "-a", "bolt://localhost:7687", "-u", "neo4j", "-p", "neo4jpassword", "RETURN 1"]
+      interval: 10s
+      timeout: 10s
       retries: 15
     restart: unless-stopped

@@ -35,6 +35,11 @@ def verify_credentials():
     print("[INFO] Credentials validation passed.")
 
 def check_docker_containers():
+    run_local = os.getenv("RUN_LOCAL_DOCKER", "true").lower() in ("true", "1", "yes")
+    if not run_local:
+        print("[INFO] Phase 2: Skipping local Docker container startup (using remote cloud instances).")
+        return
+        
     print("[INFO] Phase 2: Starting and checking local Docker databases...")
     try:
         # Stop existing containers and prune volumes to guarantee clean start state

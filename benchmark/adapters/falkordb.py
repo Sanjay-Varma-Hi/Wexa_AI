@@ -10,11 +10,12 @@ class FalkorDBAdapter(DatabaseAdapter):
     def __init__(self):
         self.host = os.getenv("FALKORDB_HOST", "localhost")
         self.port = int(os.getenv("FALKORDB_PORT", 6379))
+        self.password = os.getenv("FALKORDB_PASSWORD", None)
         self.client = None
         self.graph = None
 
     def connect(self):
-        self.client = FalkorDB(host=self.host, port=self.port)
+        self.client = FalkorDB(host=self.host, port=self.port, password=self.password)
         self.graph = self.client.select_graph("pokec")
 
     def close(self):

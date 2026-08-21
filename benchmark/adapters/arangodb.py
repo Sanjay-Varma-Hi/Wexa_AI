@@ -15,11 +15,15 @@ class ArangoDBAdapter(DatabaseAdapter):
 
     def connect(self):
         self.client = ArangoClient(hosts=self.uri)
-        # Create database 'pokec' if it doesn't already exist using system connection
-        sys_db = self.client.db('_system', username=self.user, password=self.password)
-        if not sys_db.has_database('pokec'):
-            sys_db.create_database('pokec')
-        self.db = self.client.db('pokec', username=self.user, password=self.password)
+        # Try to create 'pokec' database if permitted; fall back to '_system' otherwise
+        try:
+            sys_db = self.client.db('_system', username=self.user, password=self.password)
+            if not sys_db.has_database('pokec'):
+                sys_db.create_database('pokec')
+            self.db = self.client.db('pokec', username=self.user, password=self.password)
+        except Exception:
+            # Fallback for cloud accounts without global create database rights
+            self.db = self.client.db('_system', username=self.user, password=self.password)
 
     def close(self):
         self.client = None

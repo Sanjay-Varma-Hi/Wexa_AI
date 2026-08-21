@@ -8,11 +8,15 @@ class MemgraphAdapter(DatabaseAdapter):
     """
     def __init__(self):
         self.uri = os.getenv("MEMGRAPH_URI", "bolt://localhost:7687")
+        self.username = os.getenv("MEMGRAPH_USER", "")
+        self.password = os.getenv("MEMGRAPH_PASSWORD", "")
         self.driver = None
 
     def connect(self):
-        # Memgraph defaults to empty username and password in this benchmark setup
-        self.driver = GraphDatabase.driver(self.uri)
+        if self.username or self.password:
+            self.driver = GraphDatabase.driver(self.uri, auth=(self.username, self.password))
+        else:
+            self.driver = GraphDatabase.driver(self.uri)
 
     def close(self):
         if self.driver:

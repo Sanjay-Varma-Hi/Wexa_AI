@@ -137,29 +137,32 @@ pip install -r requirements.txt
 ```
 
 ### Step 2: Configure Environment Variables
-Copy `.env.template` to `.env` and enter your CognoDB credentials:
+Copy `.env.template` to `.env` and fill in credentials.
+
+You can run the suite in one of two configurations:
+
+#### Option A: Local Docker Resource-Capped Setup (Default)
+Keep `RUN_LOCAL_DOCKER=true` and use default localhost URIs. The orchestrator automatically cleans and starts container databases.
+
+#### Option B: Remote Managed Cloud SaaS Setup (All Databases in Cloud)
+Set `RUN_LOCAL_DOCKER=false` and enter credentials for your cloud instances:
+* **CognoDB Cloud:** `COGNODB_URI`, `COGNODB_USER`, `COGNODB_PASSWORD`
+* **Neo4j Aura:** `NEO4J_URI` (neo4j+s://...), `NEO4J_USER`, `NEO4J_PASSWORD`
+* **ArangoGraph:** `ARANGODB_URI` (https://...), `ARANGODB_USER`, `ARANGODB_PASSWORD`
+* **Memgraph Cloud:** `MEMGRAPH_URI` (bolt+s://...), `MEMGRAPH_USER`, `MEMGRAPH_PASSWORD`
+* **FalkorDB/Redis Enterprise:** `FALKORDB_HOST`, `FALKORDB_PORT`, `FALKORDB_PASSWORD`
+
 ```bash
 cp .env.template .env
 nano .env
 ```
-Ensure `.env` contains:
-```env
-COGNODB_URI=bolt://db-fdd28aa3.bravo.databases.cognodb.com:7687
-COGNODB_USER=cognodb
-COGNODB_PASSWORD=your_password_here
-```
 
 ### Step 3: Run the Orchestrator
-Execute the unified orchestrator script. This script automatically handles:
-1. Cleaning existing Docker containers and volumes (`docker compose down -v`).
-2. Booting containers for ArangoDB, FalkorDB, Memgraph, and Neo4j.
-3. Actively polling container ports until they are healthy.
-4. Preprocessing the raw Pokec dataset to sample the deterministic subgraph.
-5. Ingesting, validating, warming up, and running benchmarks.
-6. Generating charts and report files.
-
+Execute the unified orchestrator script:
 ```bash
 python3 run_benchmark.py
 ```
+* **If running locally:** It handles starting containers, verifying TCP port availability, preprocessing the graph dataset, running the benchmarks, and generating results.
+* **If running in the cloud:** It bypasses local container management, connects directly to your cloud endpoints, preprocesses/loads the dataset, performs cross-database semantic validation, and runs benchmarks.
 
 All summary results will print directly to the console, raw metrics will be recorded in `results/raw/`, aggregated rates in `results/summary.csv`, and visualization charts saved under `charts/`.

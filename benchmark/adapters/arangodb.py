@@ -94,7 +94,7 @@ class ArangoDBAdapter(DatabaseAdapter):
         return cursor.next()
 
     def hop_traversal(self, node_id, hops) -> int:
-        query = f"RETURN LENGTH(FOR v IN {hops}..{hops} OUTBOUND CONCAT('User/', @id) Friend RETURN DISTINCT v._key)"
+        query = f"WITH User RETURN LENGTH(FOR v IN {hops}..{hops} OUTBOUND CONCAT('User/', @id) Friend RETURN DISTINCT v._key)"
         cursor = self.db.aql.execute(query, bind_vars={'id': str(node_id)})
         return cursor.next()
 

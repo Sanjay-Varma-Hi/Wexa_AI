@@ -1,0 +1,13 @@
+{
+    "dataset_name": "Stanford SNAP soc-Pokec",
+    "dataset_url": "https://snap.stanford.edu/data/soc-Pokec.html",
+    "total_source_relationships": 30622564,
+    "sampled_nodes": 15000,
+    "sampled_relationships": 104602,
+    "sampling_method": "BFS starting from global highest out-degree seed node (5867)",
+    "seed_node": 5867,
+    "nodes_with_profile_attributes": 15000,
+    "missing_profiles": 0,
+    "average_out_degree": 6.973466666666667,
+    "generation_timestamp": "2026-08-20T08:20:37Z"
+}

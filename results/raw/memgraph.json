@@ -1,0 +1,153 @@
+{
+    "database": "Memgraph",
+    "database_version": "5.9.0",
+    "benchmark_version": "1.0.0",
+    "timestamp": "2026-08-21T05:21:52Z",
+    "host": {
+        "os": "Darwin",
+        "os_release": "25.5.0",
+        "architecture": "arm64",
+        "python_version": "3.9.6"
+    },
+    "dataset": {
+        "nodes": 15000,
+        "edges": 104602
+    },
+    "warmup_iterations": 20,
+    "measured_iterations": 100,
+    "ingestion": {
+        "total_time_s": 1.7538993750000031,
+        "nodes_per_sec": 8552.372053841444,
+        "edges_per_sec": 59639.681438394844
+    },
+    "workloads": {
+        "point_lookup": {
+            "p50": 0.5518545000029462,
+            "p95": 0.7780711499577818,
+            "mean": 1.095641200002433,
+            "min": 0.4227090000199496,
+            "max": 52.8899579999802,
+            "sample_count": 100,
+            "failed_count": 0,
+            "timeout_count": 0,
+            "total_attempts": 100,
+            "error_rate": 0.0
+        },
+        "filtered_lookup": {
+            "p50": 4.318833000013456,
+            "p95": 35.31586634997836,
+            "mean": 7.624867539996671,
+            "min": 2.965625000001637,
+            "max": 55.87950000000319,
+            "sample_count": 100,
+            "failed_count": 0,
+            "timeout_count": 0,
+            "total_attempts": 100,
+            "error_rate": 0.0
+        },
+        "1-hop": {
+            "p50": 0.8539165000343019,
+            "p95": 2.591210750040317,
+            "mean": 1.9915533200043,
+            "min": 0.42449999995142207,
+            "max": 58.432707999998,
+            "sample_count": 100,
+            "failed_count": 0,
+            "timeout_count": 0,
+            "total_attempts": 100,
+            "error_rate": 0.0
+        },
+        "2-hop": {
+            "p50": 2.312146000008397,
+            "p95": 7.940143450019829,
+            "mean": 4.115373770001156,
+            "min": 0.7401670000035665,
+            "max": 45.772957999986374,
+            "sample_count": 100,
+            "failed_count": 0,
+            "timeout_count": 0,
+            "total_attempts": 100,
+            "error_rate": 0.0
+        },
+        "3-hop": {
+            "p50": 14.840437500026837,
+            "p95": 84.37684164997279,
+            "mean": 28.137689140002635,
+            "min": 0.9322910000264528,
+            "max": 99.38966700002538,
+            "sample_count": 100,
+            "failed_count": 0,
+            "timeout_count": 0,
+            "total_attempts": 100,
+            "error_rate": 0.0
+        },
+        "aggregation": {
+            "p50": 5.860791499969764,
+            "p95": 14.202904500032785,
+            "mean": 7.049489189995484,
+            "min": 3.878833999976905,
+            "max": 42.212916999972094,
+            "sample_count": 100,
+            "failed_count": 0,
+            "timeout_count": 0,
+            "total_attempts": 100,
+            "error_rate": 0.0
+        }
+    },
+    "concurrency_sweeps": {
+        "1": {
+            "concurrency": 1,
+            "total_requests": 2642,
+            "reads": 2382,
+            "writes": 260,
+            "successful_requests": 2642,
+            "failed_requests": 0,
+            "timeout_count": 0,
+            "qps": 264.1436196537881,
+            "error_rate": 0.0,
+            "latency_ms": {
+                "p50": 2.1762079999803063,
+                "p95": 7.813946150031367,
+                "mean": 3.7753297683573046,
+                "min": 0.4322089999959644,
+                "max": 52.89695800001937
+            }
+        },
+        "10": {
+            "concurrency": 10,
+            "total_requests": 1845,
+            "reads": 1658,
+            "writes": 187,
+            "successful_requests": 1824,
+            "failed_requests": 21,
+            "timeout_count": 0,
+            "qps": 181.22825287357327,
+            "error_rate": 0.011382113821138212,
+            "latency_ms": {
+                "p50": 87.94010450003498,
+                "p95": 103.53573494999466,
+                "mean": 54.62700958607377,
+                "min": 0.6557500000212713,
+                "max": 382.25058300002956
+            }
+        },
+        "40": {
+            "concurrency": 40,
+            "total_requests": 2278,
+            "reads": 2054,
+            "writes": 224,
+            "successful_requests": 2228,
+            "failed_requests": 50,
+            "timeout_count": 0,
+            "qps": 216.50579932545833,
+            "error_rate": 0.021949078138718173,
+            "latency_ms": {
+                "p50": 117.62650000000008,
+                "p95": 392.1675373999989,
+                "mean": 176.66018205116774,
+                "min": 1.093790999959765,
+                "max": 789.5748330000174
+            }
+        }
+    }
+}

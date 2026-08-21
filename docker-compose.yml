@@ -13,10 +13,15 @@ services:
         limits:
           cpus: '0.5'
           memory: 256M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8529/_api/version"]
+      interval: 3s
+      timeout: 2s
+      retries: 15
     restart: unless-stopped
 
   falkordb:
-    image: falkordb/falkordb:latest
+    image: falkordb/falkordb:v4.20.3
     container_name: falkordb_bench
     ports:
       - "6379:6379"
@@ -26,10 +31,15 @@ services:
         limits:
           cpus: '0.5'
           memory: 256M
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 2s
+      retries: 15
     restart: unless-stopped
 
   memgraph:
-    image: memgraph/memgraph:latest
+    image: memgraph/memgraph:3.12.0
     container_name: memgraph_bench
     ports:
       - "7687:7687"
@@ -39,6 +49,11 @@ services:
         limits:
           cpus: '0.5'
           memory: 256M
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import socket; s = socket.socket(); s.connect(('localhost', 7687))"]
+      interval: 3s
+      timeout: 2s
+      retries: 15
     restart: unless-stopped
 
   neo4j:
@@ -57,4 +72,9 @@ services:
         limits:
           cpus: '0.5'
           memory: 256M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7474"]
+      interval: 3s
+      timeout: 2s
+      retries: 15
     restart: unless-stopped

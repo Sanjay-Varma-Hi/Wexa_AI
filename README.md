@@ -72,16 +72,17 @@ The matrix below summarizes the performance metrics from the final execution run
 
 | Database | Ingest Nodes/s | Ingest Edges/s | Total Ingest (s) | 1-Hop p50 (ms) | 2-Hop p50 (ms) | 3-Hop p50 (ms) | Point p50 (ms) | Filter p50 (ms) | Agg p50 (ms) | Concurrency QPS (C=1 / 10 / 40) | Error Rate (C=40) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| **CognoDB Cloud** | 747.0 | 5209.3 | 20.08 | 87.55 | 118.65 | 763.25 | 86.65 | 93.61 | 123.44 | 7.3 / 14.5 / 17.1 | 1.4% |
-| **ArangoDB** | 6048.4 | 42178.2 | 2.48 | 2.59 | 18.20 | 281.95 | 2.83 | 5.72 | 7.46 | 38.9 / 18.6 / 23.0 | 2.9% |
-| **Memgraph** | 8571.4 | 59772.6 | 1.75 | 0.85 | 2.31 | 14.84 | 0.55 | 4.32 | 5.86 | 264.1 / 181.2 / 216.5 | 2.2% |
-| **Neo4j** | 503.2 | 3509.0 | 29.81 | 4.11 | 6.02 | 38.58 | 5.15 | 8.13 | 10.79 | 102.1 / 55.5 / 89.2 | 3.1% |
-| **FalkorDB** | 1376.1 | 9596.5 | 10.90 | 0.65 | 2.63 | 4.56 | 0.53 | 1.61 | 4.43 | 317.3 / 167.5 / 170.1 | 0.5% |
+| **CognoDB Cloud** | 698.9 | 4873.7 | 21.46 | 89.87 | 120.35 | 750.37 | 120.06 | 93.94 | 125.89 | 6.6 / 14.5 / 15.7 | 1.4% |
+| **ArangoDB** | 6295.6 | 43902.4 | 2.38 | 3.11 | 17.29 | 224.16 | 1.95 | 5.26 | 6.28 | 43.4 / 18.6 / 21.8 | 2.2% |
+| **Memgraph** | 8477.1 | 59114.7 | 1.77 | 0.88 | 2.27 | 14.05 | 0.53 | 4.56 | 4.49 | 287.1 / 170.7 / 212.5 | 1.5% |
+| **Neo4j** | 508.9 | 3548.6 | 29.48 | 3.42 | 4.70 | 73.54 | 4.23 | 8.09 | 9.15 | 66.3 / 73.3 / 18.9 | 10.5% |
+| **FalkorDB** | 1432.9 | 9992.5 | 10.47 | 0.46 | 2.64 | 4.48 | 0.53 | 1.79 | 4.50 | 340.8 / 169.9 / 174.4 | 5.6% |
 
 ### Key Observations & Methodological Realities
-1. **Network Overhead (WAN Latency):** CognoDB Cloud's single-query latencies are dominated by network round-trip times (RTT) (~85-90ms). In contrast, local databases running on localhost display sub-millisecond or low single-digit millisecond response times.
-2. **Sustained Concurrent Throughput:** The connection-pooled multi-threaded workloads reveal that while local databases scale significantly (e.g., Memgraph hitting 216.5 QPS, FalkorDB hitting 170.1 QPS), CognoDB Cloud throughput is capped around 17.1 QPS. This constraint is consistent with network serialization bottlenecks and server-side thread throttling on the managed instance free tier.
-3. **Graph Engine Architectures:** FalkorDB (which translates graph queries to GraphBLAS matrix operations) displays the lowest traversal latencies at 2-hop and 3-hop hops locally, maintaining stable performance as traversal depth increases. Memgraph displays highly efficient in-memory traversal and fast ingestion.
+1. **Local-vs-Cloud Latency Profiles:** CognoDB Cloud displays a base single-query latency of ~85-120ms, which is dominated by network round-trip time (RTT). The four self-hosted local databases run within isolated Docker containers on `localhost` and display low single-digit millisecond response times. This comparison represents controlled resource parity for self-hosted instances under a 256MB RAM ceiling, but does not isolate SaaS virtualization overhead on CognoDB.
+2. **Sustained Concurrent Throughput:** Running concurrent workers with thread-isolated connection adapters shows that local engines scale significantly under read-heavy workloads (Memgraph reaching 212.5 QPS, FalkorDB reaching 174.4 QPS). CognoDB Cloud concurrent throughput is bounded near 15.7 QPS, indicating network socket and SaaS service-layer serialization bounds.
+3. **Traversal Performance Trends:** FalkorDB displays highly stable traversal latencies as path depth increases from 1-hop to 3-hops (0.46ms to 4.48ms). This observed trend is consistent with a GraphBLAS matrix representation which executes hops as sparse matrix-matrix multiplications, although deep profiling would be needed to isolate the exact speed contribution of the engine vs local index lookups. Memgraph displays highly efficient in-memory traversal and fast ingestion.
+
 
 ### Performance Visualization Charts
 The orchestrator automatically outputs visualization plots under the `charts/` directory:

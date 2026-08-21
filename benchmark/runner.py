@@ -6,7 +6,10 @@ import threading
 import numpy as np
 import json
 import platform
+import subprocess
 from datetime import datetime
+
+GLOBAL_VALIDATION_RESULTS = {}
 
 # Import adapters
 from benchmark.adapters.cognodb import CognoDBAdapter
@@ -45,7 +48,11 @@ def calculate_stats(latencies, total_attempts, failed_count, timeout_count):
     }
 
 # Thread-local worker execution loop for concurrent mixed read/write throughput
-def mixed_workload_worker(adapter, test_nodes, duration, results_list, lock):
+def mixed_workload_worker(adapter_cls, test_nodes, duration, results_list, lock):
+    # Instantiate a thread-local adapter connection to ensure 100% thread-safety
+    adapter = adapter_cls()
+    adapter.connect()
+    
     attempts = 0
     success = 0
     failed = 0
@@ -82,6 +89,8 @@ def mixed_workload_worker(adapter, test_nodes, duration, results_list, lock):
         except Exception:
             failed += 1
             
+    adapter.close()
+    
     with lock:
         results_list.append({
             "attempts": attempts,
@@ -128,8 +137,8 @@ def run_database_benchmark(name, adapter_cls, nodes, edges, test_nodes, validati
     
     # 2. Validation Pass
     # Verify the database is actually returning correct and equivalent structures
-    print("[INFO] Running Query Correctness Validation...")
-    val_errs = 0
+    print("[INFO] Running Cross-Database Query Correctness Validation...")
+    db_val = {}
     for node_id in validation_nodes:
         h1 = adapter.hop_traversal(node_id, 1)
         h2 = adapter.hop_traversal(node_id, 2)
@@ -137,30 +146,76 @@ def run_database_benchmark(name, adapter_cls, nodes, edges, test_nodes, validati
         
         # Verify counts are integers and point lookups return valid lists
         if not isinstance(h1, int) or not isinstance(h2, int):
-            print(f"[WARNING] Validation returned invalid traversal type for node {node_id}")
-            val_errs += 1
+            raise AssertionError(f"Validation failed: Hop traversal count is not an integer for node {node_id}")
         if pl is None or len(pl) < 3:
-            print(f"[WARNING] Validation returned invalid point lookup structure for node {node_id}")
-            val_errs += 1
+            raise AssertionError(f"Validation failed: Point lookup returned invalid structure for node {node_id}: {pl}")
             
-    if val_errs > 0:
-        print(f"[WARNING] Validation pass completed with {val_errs} warnings.")
-    else:
-        print("[INFO] Validation pass completed successfully.")
+        db_val[str(node_id)] = {
+            "point_lookup": pl,
+            "1-hop": h1,
+            "2-hop": h2
+        }
+        
+    # Compile aggregation results for validation
+    raw_agg = adapter.run_aggregation()
+    agg_dict = {}
+    for item in raw_agg:
+        if item and len(item) >= 2:
+            age = item[0]
+            count = item[1]
+            if age is not None:
+                agg_dict[str(age)] = int(count)
+    db_val["aggregation"] = agg_dict
+    
+    # Save to global validation map
+    GLOBAL_VALIDATION_RESULTS[name] = db_val
+    
+    # Cross-compare with other databases that have already run
+    if len(GLOBAL_VALIDATION_RESULTS) > 1:
+        ref_db_name = list(GLOBAL_VALIDATION_RESULTS.keys())[0]
+        ref_val = GLOBAL_VALIDATION_RESULTS[ref_db_name]
+        
+        for node_id in validation_nodes:
+            nid_str = str(node_id)
+            ref_node = ref_val[nid_str]
+            curr_node = db_val[nid_str]
+            
+            if curr_node["point_lookup"] != ref_node["point_lookup"]:
+                raise AssertionError(
+                    f"Canonical Semantic Mismatch on Point Lookup for Node ID {node_id}!\n"
+                    f"  {ref_db_name} returned: {ref_node['point_lookup']}\n"
+                    f"  {name} returned: {curr_node['point_lookup']}"
+                )
+            if curr_node["1-hop"] != ref_node["1-hop"]:
+                raise AssertionError(
+                    f"Canonical Semantic Mismatch on 1-Hop count for Node ID {node_id}!\n"
+                    f"  {ref_db_name} returned: {ref_node['1-hop']}\n"
+                    f"  {name} returned: {curr_node['1-hop']}"
+                )
+            if curr_node["2-hop"] != ref_node["2-hop"]:
+                raise AssertionError(
+                    f"Canonical Semantic Mismatch on 2-Hop count for Node ID {node_id}!\n"
+                    f"  {ref_db_name} returned: {ref_node['2-hop']}\n"
+                    f"  {name} returned: {curr_node['2-hop']}"
+                )
+                
+        if db_val["aggregation"] != ref_val["aggregation"]:
+            raise AssertionError(
+                f"Canonical Semantic Mismatch on Aggregations!\n"
+                f"  {ref_db_name} returned: {ref_val['aggregation']}\n"
+                f"  {name} returned: {db_val['aggregation']}"
+            )
+            
+    print("[INFO] Query correctness and cross-database validation completed successfully.")
 
     # 3. Read workloads (Point lookup, Filtered lookup, Hop traversals, Aggregations)
     workload_results = {}
-    
-    # Warmup procedures
-    print("[INFO] Running warm-up iterations...")
-    for nid in test_nodes[:WARMUP_ITERATIONS]:
-        try:
-            adapter.hop_traversal(nid, 1)
-            adapter.point_lookup(nid)
-        except Exception:
-            pass
             
     # Point Lookup
+    print("[INFO] Warming up Point Lookups...")
+    for nid in test_nodes[:WARMUP_ITERATIONS]:
+        adapter.point_lookup(nid)
+        
     print("[INFO] Executing Point Lookups...")
     attempts, success, failed, timeouts = 0, 0, 0, 0
     latencies = []
@@ -180,6 +235,11 @@ def run_database_benchmark(name, adapter_cls, nodes, edges, test_nodes, validati
     workload_results["point_lookup"] = calculate_stats(latencies, attempts, failed, timeouts)
 
     # Filtered Lookup
+    print("[INFO] Warming up Filtered Lookups...")
+    test_filters = [(25, 1), (30, 0), (22, 1), (28, 0), (35, 1)] * 20
+    for age, gender in test_filters[:WARMUP_ITERATIONS]:
+        adapter.filtered_lookup(age, gender)
+        
     print("[INFO] Executing Indexed/Filtered Lookups...")
     attempts, success, failed, timeouts = 0, 0, 0, 0
     latencies = []
@@ -200,6 +260,10 @@ def run_database_benchmark(name, adapter_cls, nodes, edges, test_nodes, validati
 
     # Traversals (1-hop, 2-hop, 3-hop)
     for hop in [1, 2, 3]:
+        print(f"[INFO] Warming up {hop}-Hop Traversals...")
+        for nid in test_nodes[:WARMUP_ITERATIONS]:
+            adapter.hop_traversal(nid, hop)
+            
         print(f"[INFO] Executing {hop}-Hop Traversals...")
         attempts, success, failed, timeouts = 0, 0, 0, 0
         latencies = []
@@ -217,6 +281,10 @@ def run_database_benchmark(name, adapter_cls, nodes, edges, test_nodes, validati
         workload_results[f"{hop}-hop"] = calculate_stats(latencies, attempts, failed, timeouts)
 
     # Aggregation
+    print("[INFO] Warming up Aggregations...")
+    for _ in range(WARMUP_ITERATIONS):
+        adapter.run_aggregation()
+        
     print("[INFO] Executing Aggregations...")
     attempts, success, failed, timeouts = 0, 0, 0, 0
     latencies = []
@@ -245,7 +313,7 @@ def run_database_benchmark(name, adapter_cls, nodes, edges, test_nodes, validati
         
         sweep_start = time.perf_counter()
         for _ in range(c):
-            t = threading.Thread(target=mixed_workload_worker, args=(adapter, test_nodes, MIXED_DURATION, worker_results, lock))
+            t = threading.Thread(target=mixed_workload_worker, args=(adapter_cls, test_nodes, MIXED_DURATION, worker_results, lock))
             threads.append(t)
             t.start()
             
@@ -311,10 +379,17 @@ def run_database_benchmark(name, adapter_cls, nodes, edges, test_nodes, validati
     except Exception:
         pass
 
+    commit_sha = "Unknown"
+    try:
+        commit_sha = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode().strip()
+    except Exception:
+        pass
+
     results_json = {
         "database": name,
         "database_version": db_version,
         "benchmark_version": "1.0.0",
+        "benchmark_commit_sha": commit_sha,
         "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
         "host": {
             "os": platform.system(),

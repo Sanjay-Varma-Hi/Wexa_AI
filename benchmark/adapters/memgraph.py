@@ -37,7 +37,7 @@ class MemgraphAdapter(DatabaseAdapter):
                     break
             # Batch node deletions
             while True:
-                res = session.run("MATCH (n) WITH n LIMIT 10000 DETACH DELETE n RETURN count(n)")
+                res = session.run("MATCH (n) WITH n LIMIT 10000 DELETE n RETURN count(n)")
                 val = res.single()[0]
                 if val == 0:
                     break
